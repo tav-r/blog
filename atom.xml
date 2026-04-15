@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+    <title></title>
+    <link rel="self" type="application/atom+xml" href="https://blog.rwx.fyi/atom.xml"/>
+    <link rel="alternate" type="text/html" href="https://blog.rwx.fyi"/>
+    <generator uri="https://www.getzola.org/">Zola</generator>
+    <updated>2026-04-15T00:00:00+00:00</updated>
+    <id>https://blog.rwx.fyi/atom.xml</id>
+    <entry xml:lang="en">
+        <title>Messing Around with Parsed URLs</title>
+        <published>2026-04-15T00:00:00+00:00</published>
+        <updated>2026-04-15T00:00:00+00:00</updated>
+        
+        <author>
+          <name>
+            
+              Unknown
+            
+          </name>
+        </author>
+        
+        <link rel="alternate" type="text/html" href="https://blog.rwx.fyi/messing-around-with-parsed-urls/"/>
+        <id>https://blog.rwx.fyi/messing-around-with-parsed-urls/</id>
+        
+        <content type="html" xml:base="https://blog.rwx.fyi/messing-around-with-parsed-urls/">&lt;h2 id=&quot;claims&quot;&gt;Claims&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;new URL(userControlled).pathname&lt;&#x2F;code&gt; is &lt;strong&gt;not&lt;&#x2F;strong&gt; safe to feed into &lt;code&gt;location.href&lt;&#x2F;code&gt;. For special schemes (&lt;code&gt;http&lt;&#x2F;code&gt;, &lt;code&gt;https&lt;&#x2F;code&gt;, &lt;code&gt;ws&lt;&#x2F;code&gt;, &lt;code&gt;wss&lt;&#x2F;code&gt;, &lt;code&gt;ftp&lt;&#x2F;code&gt;, &lt;code&gt;file&lt;&#x2F;code&gt;) it can start with &lt;code&gt;&#x2F;&#x2F;&lt;&#x2F;code&gt; and turn into an open redirect. For non-special schemes it can start with &lt;code&gt;javascript:&lt;&#x2F;code&gt; and turn into XSS.&lt;&#x2F;li&gt;
+&lt;li&gt;The &lt;code&gt;.hostname&lt;&#x2F;code&gt; of a &lt;code&gt;URL&lt;&#x2F;code&gt; is also not safe to allowlist against, because browsers happily parse &lt;code&gt;javascript:&#x2F;&#x2F;...stuff...evil.com&lt;&#x2F;code&gt; into a &quot;URL&quot; whose hostname ends in your trusted domain.&lt;&#x2F;li&gt;
+&lt;li&gt;Both behaviors come straight from the &lt;a rel=&quot;external&quot; href=&quot;https:&#x2F;&#x2F;url.spec.whatwg.org&#x2F;&quot;&gt;WHATWG URL Standard&lt;&#x2F;a&gt;. Browsers are doing the spec-conformant thing. The bugs are in the application code.&lt;&#x2F;li&gt;
+&lt;li&gt;The &lt;code&gt;URL&lt;&#x2F;code&gt; API looks like a sanitizer and, if done right, it can &lt;em&gt;be&lt;&#x2F;em&gt; a sanitizer, but it comes with a few footguns.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;what-started-this&quot;&gt;What started this&lt;&#x2F;h2&gt;
+&lt;p&gt;I saw this &lt;a rel=&quot;external&quot; href=&quot;https:&#x2F;&#x2F;www.youtube.com&#x2F;shorts&#x2F;hWVk9jb6L10&quot;&gt;Critical Thinking Podcast short&lt;&#x2F;a&gt; that pointed out a &lt;code&gt;javascript:&lt;&#x2F;code&gt; URL parsed by &lt;code&gt;new URL()&lt;&#x2F;code&gt; can end up with a &lt;code&gt;hostname&lt;&#x2F;code&gt; attribute. This is kind of weird. Turns out there seems to be a lot of code on the web where devs rely on attributes of &lt;code&gt;URL&lt;&#x2F;code&gt;-parsed objects for validating user-controlled data and there is more than one way this can lead to problems. I will explore two of them here.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;extra-slashes-in-special-urls&quot;&gt;Extra slashes in special URLs&lt;&#x2F;h2&gt;
+&lt;p&gt;This is a standard pattern and looks fine on first read:&lt;&#x2F;p&gt;
+&lt;pre class=&quot;giallo&quot; style=&quot;color: #E0DEF4; background-color: #232136;&quot;&gt;&lt;code data-lang=&quot;javascript&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #908CAA;font-style: italic;&quot;&gt;&#x2F;&#x2F;&lt;&#x2F;span&gt;&lt;span style=&quot;color: #6E6A86;font-style: italic;&quot;&gt; redirect client to the path of a given URL&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;const&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt; userControlledURL&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt; = new&lt;&#x2F;span&gt;&lt;span style=&quot;color: #EA9A97;&quot;&gt; URL&lt;&#x2F;span&gt;&lt;span&gt;(&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;userControlled&lt;&#x2F;span&gt;&lt;span&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;location&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;.&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;href&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt; =&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt; userControlledURL&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;.&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;pathname&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;You would expect the code to just pull out the path, so even if &lt;code&gt;userControlled&lt;&#x2F;code&gt; is something like &lt;code&gt;https:&#x2F;&#x2F;evil.com&#x2F;foo&lt;&#x2F;code&gt;, the code will navigate to &lt;code&gt;&#x2F;foo&lt;&#x2F;code&gt; on the current origin. Reasonable.&lt;&#x2F;p&gt;
+&lt;p&gt;But:&lt;&#x2F;p&gt;
+&lt;pre class=&quot;giallo&quot; style=&quot;color: #E0DEF4; background-color: #232136;&quot;&gt;&lt;code data-lang=&quot;javascript&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;(&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;new&lt;&#x2F;span&gt;&lt;span style=&quot;color: #EA9A97;&quot;&gt; URL&lt;&#x2F;span&gt;&lt;span&gt;(&lt;&#x2F;span&gt;&lt;span style=&quot;color: #F6C177;&quot;&gt;&amp;quot;https:&#x2F;&#x2F;nice.com&#x2F;&#x2F;evil.com&amp;quot;&lt;&#x2F;span&gt;&lt;span&gt;))&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;.&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;pathname&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #908CAA;font-style: italic;&quot;&gt;&#x2F;&#x2F;&lt;&#x2F;span&gt;&lt;span style=&quot;color: #6E6A86;font-style: italic;&quot;&gt; -&amp;gt; &amp;quot;&#x2F;&#x2F;evil.com&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;If &lt;code&gt;userControlled === &quot;https:&#x2F;&#x2F;nice.com&#x2F;&#x2F;evil.com&quot;&lt;&#x2F;code&gt;, the snippet above sets &lt;code&gt;location.href = &quot;&#x2F;&#x2F;evil.com&quot;&lt;&#x2F;code&gt;, which the browser resolves as a protocol-relative URL, straight to &lt;code&gt;https:&#x2F;&#x2F;evil.com&lt;&#x2F;code&gt;. Open redirect.&lt;&#x2F;p&gt;
+&lt;p&gt;The browser treats &lt;code&gt;&#x2F;&lt;&#x2F;code&gt; as a path-segment separator inside &lt;a rel=&quot;external&quot; href=&quot;https:&#x2F;&#x2F;url.spec.whatwg.org&#x2F;#path-state&quot;&gt;path state&lt;&#x2F;a&gt;. The relevant rule, paraphrased: &quot;if &lt;code&gt;c&lt;&#x2F;code&gt; is &lt;code&gt;&#x2F;&lt;&#x2F;code&gt;, then terminate the current path segment.&quot; (the same is true for &lt;code&gt;\&lt;&#x2F;code&gt; by the way).&lt;&#x2F;p&gt;
+&lt;p&gt;So tracing &lt;code&gt;https:&#x2F;&#x2F;nice.com&#x2F;&#x2F;evil.com&lt;&#x2F;code&gt; through the parser: after &lt;code&gt;https:&#x2F;&#x2F;nice.com&lt;&#x2F;code&gt; is consumed, path state runs with &lt;code&gt;c = &#x2F;&lt;&#x2F;code&gt; and an empty buffer. Special URL, &lt;code&gt;c&lt;&#x2F;code&gt; is &lt;code&gt;&#x2F;&lt;&#x2F;code&gt; → terminate the (empty) segment. Path is now &lt;code&gt;[&quot;&quot;]&lt;&#x2F;code&gt;. Then it reads &lt;code&gt;evil.com&lt;&#x2F;code&gt; into the buffer, end-of-input flushes it. Final path: &lt;code&gt;[&quot;&quot;, &quot;evil.com&quot;]&lt;&#x2F;code&gt;. The serializer joins with &lt;code&gt;&#x2F;&lt;&#x2F;code&gt; and prefixes one, giving &lt;code&gt;&quot;&#x2F;&#x2F;evil.com&quot;&lt;&#x2F;code&gt;.&lt;&#x2F;p&gt;
+&lt;p&gt;For &lt;code&gt;https:&lt;&#x2F;code&gt; URIs the path is guaranteed to start with a &lt;code&gt;&#x2F;&lt;&#x2F;code&gt;. That doesn&#x27;t save you here: &lt;code&gt;&#x2F;&#x2F;evil.com&lt;&#x2F;code&gt; also starts with &lt;code&gt;&#x2F;&lt;&#x2F;code&gt;.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;it-gets-worse-with-custom-schemes&quot;&gt;It gets worse with custom schemes&lt;&#x2F;h2&gt;
+&lt;p&gt;For non-special schemes, if the scheme isn&#x27;t followed by &lt;code&gt;&#x2F;&#x2F;&lt;&#x2F;code&gt;, the parser goes straight to path state and the pathname gets no leading &lt;code&gt;&#x2F;&lt;&#x2F;code&gt;:&lt;&#x2F;p&gt;
+&lt;pre class=&quot;giallo&quot; style=&quot;color: #E0DEF4; background-color: #232136;&quot;&gt;&lt;code data-lang=&quot;javascript&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;(&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;new&lt;&#x2F;span&gt;&lt;span style=&quot;color: #EA9A97;&quot;&gt; URL&lt;&#x2F;span&gt;&lt;span&gt;(&lt;&#x2F;span&gt;&lt;span style=&quot;color: #F6C177;&quot;&gt;&amp;quot;bla:javascript:alert(1)&amp;quot;&lt;&#x2F;span&gt;&lt;span&gt;))&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;.&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;pathname&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #908CAA;font-style: italic;&quot;&gt;&#x2F;&#x2F;&lt;&#x2F;span&gt;&lt;span style=&quot;color: #6E6A86;font-style: italic;&quot;&gt; -&amp;gt; &amp;quot;javascript:alert(1)&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;So if &lt;code&gt;userControlled === &quot;bla:javascript:alert(1)&quot;&lt;&#x2F;code&gt; and the same redirect snippet runs:&lt;&#x2F;p&gt;
+&lt;pre class=&quot;giallo&quot; style=&quot;color: #E0DEF4; background-color: #232136;&quot;&gt;&lt;code data-lang=&quot;javascript&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;location&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;.&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;href&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt; =&lt;&#x2F;span&gt;&lt;span style=&quot;color: #F6C177;&quot;&gt; &amp;quot;javascript:alert(1)&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;XSS!&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;quick-write-up-of-a-real-world-bug-bounty-finding&quot;&gt;Quick write-up of a real-world bug bounty finding&lt;&#x2F;h2&gt;
+&lt;p&gt;Back to the initial observation that &lt;code&gt;javascript:&lt;&#x2F;code&gt; URLs can have non-falsey &lt;code&gt;.hostname&lt;&#x2F;code&gt;&#x2F;&lt;code&gt;.host&lt;&#x2F;code&gt; attributes. After learning that, I went back to a target with a web message handler that I had looked at before but didn&#x27;t manage to exploit. The vulnerable code was a &lt;code&gt;message&lt;&#x2F;code&gt; handler that looked roughly like this:&lt;&#x2F;p&gt;
+&lt;pre class=&quot;giallo&quot; style=&quot;color: #E0DEF4; background-color: #232136;&quot;&gt;&lt;code data-lang=&quot;javascript&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;window&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;.&lt;&#x2F;span&gt;&lt;span style=&quot;color: #EA9A97;&quot;&gt;addEventListener&lt;&#x2F;span&gt;&lt;span&gt;(&lt;&#x2F;span&gt;&lt;span style=&quot;color: #F6C177;&quot;&gt;&amp;quot;message&amp;quot;&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;, (&lt;&#x2F;span&gt;&lt;span style=&quot;color: #C4A7E7;font-style: italic;&quot;&gt;event&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;)&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt; =&amp;gt;&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt; {&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;    let&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt; data&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt; =&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt; event&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;.&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;data&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;    if&lt;&#x2F;span&gt;&lt;span&gt; (&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;data&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;?.&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;event_type&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt; ===&lt;&#x2F;span&gt;&lt;span style=&quot;color: #F6C177;&quot;&gt; &amp;quot;NAVIGATE&amp;quot;&lt;&#x2F;span&gt;&lt;span&gt;)&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt; {&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;        try&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt; {&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;            let&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt; t&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt; = new&lt;&#x2F;span&gt;&lt;span style=&quot;color: #EA9A97;&quot;&gt; URL&lt;&#x2F;span&gt;&lt;span&gt;(&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;data&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;.&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;href&lt;&#x2F;span&gt;&lt;span&gt;)&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;            if&lt;&#x2F;span&gt;&lt;span&gt; (&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;                t&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;.&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;hostname&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;.&lt;&#x2F;span&gt;&lt;span style=&quot;color: #EA9A97;&quot;&gt;endsWith&lt;&#x2F;span&gt;&lt;span&gt;(&lt;&#x2F;span&gt;&lt;span style=&quot;color: #F6C177;&quot;&gt;&amp;quot;.target.com&amp;quot;&lt;&#x2F;span&gt;&lt;span&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;            )&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt; {&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;                router&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;.&lt;&#x2F;span&gt;&lt;span style=&quot;color: #EA9A97;&quot;&gt;push&lt;&#x2F;span&gt;&lt;span&gt;(&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;data&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;.&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;href&lt;&#x2F;span&gt;&lt;span&gt;)&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;            }&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;        }&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt; catch&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt; {}&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;    }&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;}&lt;&#x2F;span&gt;&lt;span&gt;)&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;Two things going wrong:&lt;&#x2F;p&gt;
+&lt;ol&gt;
+&lt;li&gt;No &lt;code&gt;event.origin&lt;&#x2F;code&gt; check on the message itself.&lt;&#x2F;li&gt;
+&lt;li&gt;As pointed out: &lt;strong&gt;&lt;code&gt;.hostname&lt;&#x2F;code&gt; of a parsed URL is not what you think it is&lt;&#x2F;strong&gt; when the URL has a non-special scheme.&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;p&gt;To get a &lt;code&gt;.hostname&lt;&#x2F;code&gt;, the string still has to start with &lt;code&gt;[SCHEME]:&#x2F;&#x2F;...&lt;&#x2F;code&gt;. This is possible with a functioning XSS payload. To check this yourself, try this in the DevTools console:&lt;&#x2F;p&gt;
+&lt;pre class=&quot;giallo&quot; style=&quot;color: #E0DEF4; background-color: #232136;&quot;&gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;&amp;gt; let url = new URL(&amp;quot;javascript:&#x2F;&#x2F;%0aconsole.log(&amp;#39;pwned&amp;#39;)%2f%2f.example.com&#x2F;&amp;quot;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;&amp;gt; url.hostname&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;&amp;quot;%0aconsole.log(&amp;#39;pwned&amp;#39;)%2f%2f.example.com&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;&amp;gt; url.host&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;&amp;quot;%0aconsole.log(&amp;#39;pwned&amp;#39;)%2f%2f.example.com&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;&amp;gt; window.location = url.href&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;&#x2F;&#x2F; pwned&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;This is the WHATWG behavior: the spec lets non-special URLs carry an authority. So the exploit:&lt;&#x2F;p&gt;
+&lt;pre class=&quot;giallo&quot; style=&quot;color: #E0DEF4; background-color: #232136;&quot;&gt;&lt;code data-lang=&quot;javascript&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;const&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt; win&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt; =&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt; window&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;.&lt;&#x2F;span&gt;&lt;span style=&quot;color: #EA9A97;&quot;&gt;open&lt;&#x2F;span&gt;&lt;span&gt;(&lt;&#x2F;span&gt;&lt;span style=&quot;color: #F6C177;&quot;&gt;&amp;quot;https:&#x2F;&#x2F;www.target.com&#x2F;&amp;quot;&lt;&#x2F;span&gt;&lt;span&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;await new&lt;&#x2F;span&gt;&lt;span style=&quot;color: #9CCFD8;&quot;&gt; Promise&lt;&#x2F;span&gt;&lt;span&gt;(&lt;&#x2F;span&gt;&lt;span style=&quot;color: #C4A7E7;font-style: italic;&quot;&gt;r&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt; =&amp;gt;&lt;&#x2F;span&gt;&lt;span style=&quot;color: #EA9A97;&quot;&gt; setTimeout&lt;&#x2F;span&gt;&lt;span&gt;(&lt;&#x2F;span&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;r&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;,&lt;&#x2F;span&gt;&lt;span style=&quot;color: #EA9A97;&quot;&gt; 600&lt;&#x2F;span&gt;&lt;span&gt;))&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;font-style: italic;&quot;&gt;  &#x2F;&#x2F;&lt;&#x2F;span&gt;&lt;span style=&quot;color: #6E6A86;font-style: italic;&quot;&gt; wait for load&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;font-style: italic;&quot;&gt;win&lt;&#x2F;span&gt;&lt;span style=&quot;color: #3E8FB0;&quot;&gt;.&lt;&#x2F;span&gt;&lt;span style=&quot;color: #EA9A97;&quot;&gt;postMessage&lt;&#x2F;span&gt;&lt;span&gt;(&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;{&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #F6C177;&quot;&gt;    &amp;quot;event_type&amp;quot;&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;:&lt;&#x2F;span&gt;&lt;span style=&quot;color: #F6C177;&quot;&gt; &amp;quot;NAVIGATE&amp;quot;&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;,&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #F6C177;&quot;&gt;    &amp;quot;href&amp;quot;&lt;&#x2F;span&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;:&lt;&#x2F;span&gt;&lt;span style=&quot;color: #F6C177;&quot;&gt; &amp;quot;javascript:&#x2F;&#x2F;%0aalert(document.domain)%2f%2f.target.com&#x2F;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span style=&quot;color: #908CAA;&quot;&gt;},&lt;&#x2F;span&gt;&lt;span style=&quot;color: #F6C177;&quot;&gt; &amp;quot;*&amp;quot;&lt;&#x2F;span&gt;&lt;span&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;&lt;code&gt;new URL(data.href)&lt;&#x2F;code&gt; parses, &lt;code&gt;.hostname&lt;&#x2F;code&gt; is &lt;code&gt;%0aalert(document.domain)%2f%2f.target.com&lt;&#x2F;code&gt; (and therefore ends with &lt;code&gt;.target.com&lt;&#x2F;code&gt;), suffix check passes. &lt;code&gt;router.push(data.href)&lt;&#x2F;code&gt; runs with the same string, the browser navigates to a &lt;code&gt;javascript:&lt;&#x2F;code&gt; URL, and:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;%0a&lt;&#x2F;code&gt; decodes to a newline, terminating the JS comment that the &lt;code&gt;&#x2F;&#x2F;&lt;&#x2F;code&gt; opened&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;alert(document.domain)&lt;&#x2F;code&gt; runs on the next line&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;&#x2F;&#x2F;.target.com&#x2F;&lt;&#x2F;code&gt; is a trailing comment&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;wrapping-up&quot;&gt;Wrapping up&lt;&#x2F;h2&gt;
+&lt;p&gt;Going back to the claims at the top: &lt;code&gt;URL&lt;&#x2F;code&gt; &lt;em&gt;can&lt;&#x2F;em&gt; be used as a sanitizer, but only if you check the scheme first. Without that check, &lt;code&gt;.pathname&lt;&#x2F;code&gt;, &lt;code&gt;.hostname&lt;&#x2F;code&gt;, &lt;code&gt;.host&lt;&#x2F;code&gt; are just &lt;em&gt;components of the parse result&lt;&#x2F;em&gt;, and what those components mean depends entirely on the scheme. Two vectors discussed above are instances of the same mistake: trusting a component without first asking whether the scheme makes that component meaningful:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;.pathname&lt;&#x2F;code&gt; looks like a relative path, but for special URLs it can start with &lt;code&gt;&#x2F;&#x2F;&lt;&#x2F;code&gt; (backslash trick), and for non-special URLs it can be &lt;code&gt;javascript:alert(1)&lt;&#x2F;code&gt; (opaque path).&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;.hostname&lt;&#x2F;code&gt; looks like a hostname, but for non-special URLs it&#x27;s whatever bytes the spec lets you stuff between &lt;code&gt;&#x2F;&#x2F;&lt;&#x2F;code&gt; and the next path-terminating character.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;A short list of things that are &lt;em&gt;probably&lt;&#x2F;em&gt; safe for redirect&#x2F;allowlist code:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Compare &lt;code&gt;parsed.origin === &quot;https:&#x2F;&#x2F;your.exact.origin&quot;&lt;&#x2F;code&gt; and reject anything else.&lt;&#x2F;li&gt;
+&lt;li&gt;Explicitly check &lt;code&gt;parsed.protocol === &quot;https:&quot;&lt;&#x2F;code&gt; before doing anything with &lt;code&gt;parsed.hostname&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;If you want to redirect to a path, prefix it: &lt;code&gt;window.location = window.location.origin + &quot;&#x2F;&quot; + parsed.pathname.substr(1)&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+</content>
+        
+    </entry>
+    <entry xml:lang="en">
+        <title>About</title>
+        <published>2026-04-14T00:00:00+00:00</published>
+        <updated>2026-04-14T00:00:00+00:00</updated>
+        
+        <author>
+          <name>
+            
+              Unknown
+            
+          </name>
+        </author>
+        
+        <link rel="alternate" type="text/html" href="https://blog.rwx.fyi/about/"/>
+        <id>https://blog.rwx.fyi/about/</id>
+        
+        <content type="html" xml:base="https://blog.rwx.fyi/about/">&lt;p&gt;This is where I write down my thoughts and notes. Things I&#x27;m interested in:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;computer security research&lt;&#x2F;li&gt;
+&lt;li&gt;bug bounty hunting and the economy around it&lt;&#x2F;li&gt;
+&lt;li&gt;mathematical and philosophical logic&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+</content>
+        
+    </entry>
+    <entry xml:lang="en">
+        <title>SmallScan</title>
+        <published>2026-04-14T00:00:00+00:00</published>
+        <updated>2026-04-14T00:00:00+00:00</updated>
+        
+        <author>
+          <name>
+            
+              Unknown
+            
+          </name>
+        </author>
+        
+        <link rel="alternate" type="text/html" href="https://blog.rwx.fyi/smallscan/"/>
+        <id>https://blog.rwx.fyi/smallscan/</id>
+        
+        <content type="html" xml:base="https://blog.rwx.fyi/smallscan/">&lt;p&gt;SmallScan is a private research project I&#x27;m currently working on. The goal is to develop an LLM-driven web security testing tool that works reliably with smaller language models. The focus of the research is on:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;efficient orchestration of simple, dedicated &quot;agents&quot; that allows complex tests to be divided into small subtasks&lt;&#x2F;li&gt;
+&lt;li&gt;developing reproducible, traceable, and comprehensible execution flows&lt;&#x2F;li&gt;
+&lt;li&gt;developing and implementing reusable &quot;agent team&quot; patterns&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;As frontier models become more powerful, there is a growing risk of delegating too much of the cognitive work to them. While the performance of these models is indeed impressive, it comes at the price of less understandable results and more hidden failure modes. The idea behind SmallScan is that good engineering, solid domain knowledge, and insights from various research areas, ranging from argumentation theory to software verification, can be leveraged to build powerful &quot;agentic&quot; tools with smaller open-weight models.&lt;&#x2F;p&gt;
+&lt;p&gt;Notes, results, and code will appear here as the work progresses.&lt;&#x2F;p&gt;
+&lt;p&gt;(To be continued)&lt;&#x2F;p&gt;
+</content>
+        
+    </entry>
+</feed>

