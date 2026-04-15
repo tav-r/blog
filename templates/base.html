@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ config.title | default(value="Blog") }}{% endblock title %}</title>
+    <link rel="stylesheet" href="{{ get_url(path='style.css') }}">
+    <link rel="alternate" type="application/atom+xml" title="Feed" href="{{ get_url(path='atom.xml') }}">
+</head>
+<body>
+    <div class="page">
+        <header class="site-header">
+            <div class="titlebar">
+                <span class="title">{% block titlebar %}{{ config.title | default(value="blog") }}{% endblock titlebar %}</span>
+                <span class="controls">&#x2014; &#x25FB; &#x2715;</span>
+            </div>
+            <nav>
+                <a href="{{ config.base_url }}">index</a>
+                <a href="{{ get_url(path='@/about.md') }}">about</a>
+                <a href="{{ get_url(path='@/smallscan.md') }}">smallscan</a>
+                <a href="{{ get_url(path='atom.xml') }}" class="feed-link">feed</a>
+            </nav>
+        </header>
+        <main>
+            {% block content %}{% endblock content %}
+        </main>
+        <footer>
+            <div class="status">{% block status %}{% endblock status %}</div>
+        </footer>
+    </div>
+</body>
+</html>

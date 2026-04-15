@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="posts">
+{% if section.pages %}
+{% for page in section.pages %}
+{% if not page.extra.hidden %}
+    <a href="{{ page.permalink }}" class="post-row">
+        <span class="post-date">{{ page.date | date(format="%Y.%m.%d") }}</span>
+        <span class="post-title">{{ page.title }}</span>
+    </a>
+{% endif %}
+{% endfor %}
+{% else %}
+    <p class="empty">nothing here yet.</p>
+{% endif %}
+</section>
+{% endblock content %}

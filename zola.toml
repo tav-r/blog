@@ -1,0 +1,14 @@
+base_url = "https://blog.rwx.fyi"
+
+compile_sass = true
+
+build_search_index = false
+
+generate_feeds = true
+feed_filenames = ["atom.xml"]
+
+[markdown.highlighting]
+theme = "rose-pine-moon"
+style = "inline"
+
+[extra]

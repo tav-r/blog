@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page.title }}{% endblock title %}
+{% block titlebar %}{{ page.title }}{% endblock titlebar %}
+
+{% block content %}
+<article>
+    <header class="post-header">
+        <h1>{{ page.title }}</h1>
+        <div class="post-meta">
+            {% if page.date %}<time>{{ page.date | date(format="%Y.%m.%d") }}</time>{% endif %}
+            {% if page.taxonomies.tags %}
+            <span class="tag-list">
+                {% for tag in page.taxonomies.tags %}
+                <span class="tag">[{{ tag }}]</span>
+                {% endfor %}
+            </span>
+            {% endif %}
+        </div>
+    </header>
+    <div class="post-body">
+        {{ page.content | safe }}
+    </div>
+</article>
+{% endblock content %}
+
+{% block status %}last modified {{ page.date | date(format="%Y.%m.%d") }}{% endblock status %}
