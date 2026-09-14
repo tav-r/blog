@@ -11,7 +11,7 @@ description = "WHATWG URL parsing has some weird corners. They turn into XSS and
 - Both behaviors come straight from the [WHATWG URL Standard](https://url.spec.whatwg.org/). Browsers are doing the spec-conformant thing. The bugs are in the application code.
 - The `URL` API looks like a sanitizer and, if done right, it can *be* a sanitizer, but it comes with a few footguns.
 
-## What started this
+## Intro
 
 I saw this [Critical Thinking Podcast short](https://www.youtube.com/shorts/hWVk9jb6L10) that pointed out a `javascript:` URL parsed by `new URL()` can end up with a `hostname` attribute. This is kind of weird. Turns out there seems to be a lot of code on the web where devs rely on attributes of `URL`-parsed objects for validating user-controlled data and there is more than one way this can lead to problems. I will explore two of them here.
 
@@ -43,8 +43,7 @@ So tracing `https://nice.com//evil.com` through the parser: after `https://nice.
 
 For `https:` URIs the path is guaranteed to start with a `/`. That doesn't save you here: `//evil.com` also starts with `/`.
 
-## It gets worse with custom schemes
-
+## Custom schemes
 For non-special schemes, if the scheme isn't followed by `//`, the parser goes straight to path state and the pathname gets no leading `/`:
 
 ```js
